@@ -1,12 +1,12 @@
 <template>
-  <div class="app-container">
+ <div class="app-container">
     <el-container>
       <el-aside :width="isCollapse ? '64px' : '200px'">
         <el-menu
           :collapse="isCollapse"
           :collapse-transition="false"
           class="el-menu-vertical"
-          background-color="rgba(255, 255, 255, 0.8)"
+          background-color="rgba(255, 255, 255, 0.7)"
           text-color="#304156"
           active-text-color="#409EFF"
           :default-active="activeIndex"
@@ -134,6 +134,7 @@
     </el-dialog>
   </div>
 </template>
+
 <script>
 import MarkdownRenderer from '@/components/MarkdownRenderer.vue';
 
@@ -445,14 +446,17 @@ export default {
       historyDialogVisible: false,
       historyDetailVisible: false,
       historyRecords: [],
-      selectedHistoryRecord: null
+      selectedHistoryRecord: null,
+      activeIndex: '1'
     };
   },
   mounted() {
     this.selectedVisionModel = this.visionModels[0];
     this.selectedTextModel = this.textModels[0];
-	this.currentWriter = this.writers[0];
+    this.currentWriter = this.writers[0];
     this.loadHistory();
+    this.checkMobileView();
+    window.addEventListener('resize', this.checkMobileView);
   },
   methods: {
     toggleSidebar() {
@@ -632,10 +636,21 @@ export default {
         this.historyRecords.splice(index, 1);
         localStorage.setItem('historyRecords', JSON.stringify(this.historyRecords));
       }
+    },
+    checkMobileView() {
+      if (window.innerWidth <= 768) {
+        this.isCollapse = true;
+      } else {
+        this.isCollapse = false;
+      }
     }
+  },
+  beforeDestroy() {
+    window.removeEventListener('resize', this.checkMobileView);
   }
 };
 </script>
+
 <style scoped>
 .app-container {
   background-color: #e0f7fa;
