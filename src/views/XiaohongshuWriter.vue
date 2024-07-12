@@ -1,114 +1,112 @@
 <template>
- <div class="app-container">
-    <el-container>
-      <el-aside :width="isCollapse ? '64px' : '200px'">
-        <el-menu
-          :collapse="isCollapse"
-          :collapse-transition="false"
-          class="el-menu-vertical"
-          background-color="rgba(255, 255, 255, 0.7)"
-          text-color="#304156"
-          active-text-color="#409EFF"
-          :default-active="activeIndex"
+  <el-container class="app-container">
+    <el-aside :width="isCollapse ? '64px' : '200px'">
+      <el-menu
+        :collapse="isCollapse"
+        :collapse-transition="false"
+        class="el-menu-vertical"
+        background-color="rgba(255, 255, 255, 0.7)"
+        text-color="#304156"
+        active-text-color="#409EFF"
+        :default-active="activeIndex"
+      >
+        <el-menu-item index="0" @click="toggleSidebar">
+          <i :class="isCollapse ? 'el-icon-s-unfold' : 'el-icon-s-fold'"></i>
+          <span slot="title">{{ isCollapse ? '' : '收起菜单' }}</span>
+        </el-menu-item>
+        <el-menu-item
+          v-for="(writer, index) in writers"
+          :key="index"
+          :index="(index + 1).toString()"
+          @click="selectWriter(writer)"
         >
-          <el-menu-item index="0" @click="toggleSidebar">
-            <i :class="isCollapse ? 'el-icon-s-unfold' : 'el-icon-s-fold'"></i>
-            <span slot="title">{{ isCollapse ? '' : '收起菜单' }}</span>
-          </el-menu-item>
-          <el-menu-item
-            v-for="(writer, index) in writers"
-            :key="index"
-            :index="(index + 1).toString()"
-            @click="selectWriter(writer)"
-          >
-            <img :src="require(`@/assets/${writer.icon}`)" class="writer-icon" />
-            <span slot="title">{{ writer.name }}</span>
-          </el-menu-item>
-        </el-menu>
-      </el-aside>
-      <el-main>
-        <h1 class="main-title">全能内容创作助手 - {{ currentWriter ? currentWriter.name : '' }}</h1>
-        
-        <div class="model-selection">
-          <div class="model-group">
-            <h3>视觉模型</h3>
-            <el-select v-model="selectedVisionModel" placeholder="选择视觉模型">
-              <el-option
-                v-for="model in visionModels"
-                :key="model"
-                :label="model"
-                :value="model"
-              ></el-option>
-            </el-select>
-          </div>
-          <div class="model-group">
-            <h3>文本生成模型</h3>
-            <el-select v-model="selectedTextModel" placeholder="选择文本模型" @change="onTextModelChange">
-              <el-option
-                v-for="model in textModels"
-                :key="model"
-                :label="model"
-                :value="model"
-              ></el-option>
-            </el-select>
-          </div>
+          <img :src="require(`@/assets/${writer.icon}`)" class="writer-icon" />
+          <span slot="title">{{ writer.name }}</span>
+        </el-menu-item>
+      </el-menu>
+    </el-aside>
+    <el-main>
+      <h1 class="main-title">全能内容创作助手 - {{ currentWriter ? currentWriter.name : '' }}</h1>
+      
+      <div class="model-selection">
+        <div class="model-group">
+          <h3>视觉模型</h3>
+          <el-select v-model="selectedVisionModel" placeholder="选择视觉模型">
+            <el-option
+              v-for="model in visionModels"
+              :key="model"
+              :label="model"
+              :value="model"
+            ></el-option>
+          </el-select>
         </div>
-        
-        <div class="chat-windows">
-          <div class="chat-window" v-if="uploadedImage">
-            <h3>视觉模型结果</h3>
-            <div class="chat-messages">
-              <div v-if="visionResult" class="message assistant">
-                <div class="content">
-                  <MarkdownRenderer :content="visionResult" />
-                </div>
-                <div class="model-label">{{ selectedVisionModel }}</div>
+        <div class="model-group">
+          <h3>文本生成模型</h3>
+          <el-select v-model="selectedTextModel" placeholder="选择文本模型" @change="onTextModelChange">
+            <el-option
+              v-for="model in textModels"
+              :key="model"
+              :label="model"
+              :value="model"
+            ></el-option>
+          </el-select>
+        </div>
+      </div>
+      
+      <div class="chat-windows">
+        <div class="chat-window" v-if="uploadedImage">
+          <h3>视觉模型结果</h3>
+          <div class="chat-messages">
+            <div v-if="visionResult" class="message assistant">
+              <div class="content">
+                <MarkdownRenderer :content="visionResult" />
               </div>
-            </div>
-          </div>
-          
-          <div class="chat-window">
-            <h3>文本模型结果</h3>
-            <div class="chat-messages">
-              <div v-for="message in textMessages" :key="message.id" :class="['message', message.role]">
-                <div class="content">
-                  <MarkdownRenderer :content="message.content" />
-                </div>
-                <div class="model-label">{{ message.model }}</div>
-              </div>
+              <div class="model-label">{{ selectedVisionModel }}</div>
             </div>
           </div>
         </div>
         
-        <div class="input-container">
-          <el-input
-            v-model="userInput"
-            :placeholder="currentWriter ? currentWriter.placeholder : '输入提示词...'"
-            @keyup.enter.native="sendMessage"
-          >
-            <template slot="append">
-              <el-upload
-                class="upload-demo"
-                action="#"
-                :show-file-list="false"
-                :on-change="handleImageUpload"
-                :auto-upload="false"
-              >
-                <i class="el-icon-paperclip"></i>
-              </el-upload>
-            </template>
-          </el-input>
-          <el-button @click="sendMessage" type="primary" :loading="isLoading">发送</el-button>
-          <el-button @click="regenerateTextContent" icon="el-icon-refresh" :disabled="!canRegenerate">重新生成</el-button>
-          <el-button @click="showHistory" icon="el-icon-takeaway-box">历史记录</el-button>
+        <div class="chat-window">
+          <h3>文本模型结果</h3>
+          <div class="chat-messages">
+            <div v-for="message in textMessages" :key="message.id" :class="['message', message.role]">
+              <div class="content">
+                <MarkdownRenderer :content="message.content" />
+              </div>
+              <div class="model-label">{{ message.model }}</div>
+            </div>
+          </div>
         </div>
-        
-        <div class="preview-container" v-if="imagePreview">
-          <img :src="imagePreview" alt="Preview" class="image-preview"/>
-          <i class="el-icon-close close-preview" @click="clearImagePreview"></i>
-        </div>
-      </el-main>
-    </el-container>
+      </div>
+      
+      <div class="input-container">
+        <el-input
+          v-model="userInput"
+          :placeholder="currentWriter ? currentWriter.placeholder : '输入提示词...'"
+          @keyup.enter.native="sendMessage"
+        >
+          <template slot="append">
+            <el-upload
+              class="upload-demo"
+              action="#"
+              :show-file-list="false"
+              :on-change="handleImageUpload"
+              :auto-upload="false"
+            >
+              <i class="el-icon-paperclip"></i>
+            </el-upload>
+          </template>
+        </el-input>
+        <el-button @click="sendMessage" type="primary" :loading="isLoading">发送</el-button>
+        <el-button @click="regenerateTextContent" icon="el-icon-refresh" :disabled="!canRegenerate">重新生成</el-button>
+        <el-button @click="showHistory" icon="el-icon-takeaway-box">历史记录</el-button>
+      </div>
+      
+      <div class="preview-container" v-if="imagePreview">
+        <img :src="imagePreview" alt="Preview" class="image-preview"/>
+        <i class="el-icon-close close-preview" @click="clearImagePreview"></i>
+      </div>
+    </el-main>
 
     <el-dialog title="历史记录" :visible.sync="historyDialogVisible" width="90%">
       <el-table :data="historyRecords" style="width: 100%">
@@ -132,7 +130,7 @@
         <MarkdownRenderer :content="selectedHistoryRecord.textResult" />
       </div>
     </el-dialog>
-  </div>
+  </el-container>
 </template>
 
 <script>
@@ -654,7 +652,8 @@ export default {
 <style scoped>
 .app-container {
   background-color: #e0f7fa;
-  min-height: 100vh;
+  flex: 1;
+  display: flex;
 }
 
 .el-container {
@@ -667,6 +666,7 @@ export default {
   height: 100vh;
 }
 
+
 .el-menu-vertical:not(.el-menu--collapse) {
   width: 200px;
   border-right: none;
@@ -674,6 +674,7 @@ export default {
 
 .el-menu-item {
   color: #333 !important;
+  background-color: rgba(255, 255, 255, 0.7) !important;
 }
 
 .el-menu-item:hover, .el-menu-item.is-active {
