@@ -570,7 +570,7 @@ export default {
     },
     async performSearch() {
     try {
-      const response = await fetch('http://192.168.2.6:7860/search', {
+      const response = await fetch('https://mistpe-search.hf.space/search', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
