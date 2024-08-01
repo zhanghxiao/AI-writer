@@ -53,6 +53,17 @@
         </div>
       </div>
       
+      <div class="search-toggle">
+        <span>联网检索</span>
+        <el-switch
+          v-model="searchEnabled"
+          @change="onSearchToggle"
+        ></el-switch>
+      </div>
+      <div v-if="searchToggleMessage" class="search-toggle-message">
+        {{ searchToggleMessage }}
+      </div>
+      
       <div class="chat-windows">
         <div class="chat-window" v-if="uploadedImage">
           <h3>视觉模型结果</h3>
@@ -69,6 +80,19 @@
         <div class="chat-window">
           <h3>文本模型结果</h3>
           <div class="chat-messages">
+            <div v-if="searchResults" class="message assistant search-results">
+              <div class="content">
+                <el-collapse>
+                  <el-collapse-item title="检索结果">
+                    <div v-for="(result, index) in searchResults" :key="index">
+                      <h4>{{ result.title }}</h4>
+                      <p>{{ result.body }}</p>
+                      <a :href="result.href" target="_blank">查看原文</a>
+                    </div>
+                  </el-collapse-item>
+                </el-collapse>
+              </div>
+            </div>
             <div v-for="message in textMessages" :key="message.id" :class="['message', message.role]">
               <div class="content">
                 <MarkdownRenderer :content="message.content" />
@@ -445,7 +469,10 @@ export default {
       historyDetailVisible: false,
       historyRecords: [],
       selectedHistoryRecord: null,
-      activeIndex: '1'
+      activeIndex: '1',
+      searchEnabled: false,
+      searchToggleMessage: '',
+      searchResults: null
     };
   },
   mounted() {
@@ -480,12 +507,18 @@ export default {
       this.isLoading = true;
       this.visionResult = '';
       this.textMessages = [];
+      this.searchResults = null;
 
       try {
         let visionResult = '';
         if (this.uploadedImage) {
           visionResult = await this.callVisionModel();
         }
+
+        if (this.searchEnabled) {
+          await this.performSearch();
+        }
+
         await this.callTextModel(visionResult);
         this.canRegenerate = true;
         this.saveToHistory();
@@ -496,7 +529,7 @@ export default {
         this.isLoading = false;
       }
     },
-    async callVisionModel() {
+     async callVisionModel() {
       const reader = new FileReader();
       return new Promise((resolve, reject) => {
         reader.onload = async () => {
@@ -535,57 +568,84 @@ export default {
         reader.readAsDataURL(this.uploadedImage);
       });
     },
-    async callTextModel(visionResult) {
-      const assistantMessage = { id: Date.now() + 1, role: 'assistant', content: '', model: this.selectedTextModel };
-      this.textMessages.push(assistantMessage);
+    async performSearch() {
+    try {
+      const response = await fetch('http://192.168.2.6:7860/search', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          question: this.userInput,
+          api_key: process.env.VUE_APP_API_KEY
+        })
+      });
 
-      const prompt = this.currentWriter ? this.currentWriter.prompt : '';
-      const fullPrompt = `${prompt}\n\n图片描述：${visionResult}\n用户提示词：${this.userInput}`;
+      const data = await response.json();
+      if (data.search_results) {
+        this.searchResults = data.search_results;
+      }
+    } catch (error) {
+      console.error('Error performing search:', error);
+      this.$message.error('搜索过程中出错');
+    }
+  },
 
-      try {
-        const response = await fetch(`${process.env.VUE_APP_API_BASE_URL}/v1/chat/completions`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': `Bearer ${process.env.VUE_APP_API_KEY}`
-          },
-          body: JSON.stringify({
-            model: this.selectedTextModel,
-            messages: [{ role: 'user', content: fullPrompt }],
-            stream: true
-          })
-        });
+  async callTextModel(visionResult) {
+    const assistantMessage = { id: Date.now() + 1, role: 'assistant', content: '', model: this.selectedTextModel };
+    this.textMessages.push(assistantMessage);
 
-        const reader = response.body.getReader();
-        const decoder = new TextDecoder('utf-8');
-        let result = '';
+    const prompt = this.currentWriter ? this.currentWriter.prompt : '';
+    let fullPrompt = `${prompt}\n\n图片描述：${visionResult}\n用户提示词：${this.userInput}`;
 
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          const chunk = decoder.decode(value, { stream: true });
-          const lines = chunk.split('\n').filter(line => line.trim() !== '');
-          for (const line of lines) {
-            if (line.startsWith('data: ')) {
-              try {
-                const data = JSON.parse(line.slice(6));
-                if (data.choices[0].delta && data.choices[0].delta.content) {
-                  result += data.choices[0].delta.content;
-                  assistantMessage.content = result;
-                  this.$forceUpdate();
-                }
-              } catch (error) {
-                console.error('Error parsing JSON:', error);
+    if (this.searchResults) {
+      fullPrompt += '\n\n搜索结果：\n' + this.searchResults.map(result => `${result.title}\n${result.body}`).join('\n\n');
+    }
+
+    try {
+      const response = await fetch(`${process.env.VUE_APP_API_BASE_URL}/v1/chat/completions`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${process.env.VUE_APP_API_KEY}`
+        },
+        body: JSON.stringify({
+          model: this.selectedTextModel,
+          messages: [{ role: 'user', content: fullPrompt }],
+          stream: true
+        })
+      });
+
+      const reader = response.body.getReader();
+      const decoder = new TextDecoder('utf-8');
+      let result = '';
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        const chunk = decoder.decode(value, { stream: true });
+        const lines = chunk.split('\n').filter(line => line.trim() !== '');
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            try {
+              const data = JSON.parse(line.slice(6));
+              if (data.choices[0].delta && data.choices[0].delta.content) {
+                result += data.choices[0].delta.content;
+                assistantMessage.content = result;
+                this.$forceUpdate();
               }
+            } catch (error) {
+              console.error('Error parsing JSON:', error);
             }
           }
-          await new Promise(resolve => setTimeout(resolve, 100));
         }
-      } catch (error) {
-        console.error('Error calling text model:', error);
-        assistantMessage.content = '文本模型调用失败';
+        await new Promise(resolve => setTimeout(resolve, 100));
       }
-    },
+    } catch (error) {
+      console.error('Error calling text model:', error);
+      assistantMessage.content = '文本模型调用失败';
+    }
+  },
     onTextModelChange() {
       this.canRegenerate = this.textMessages.length > 0;
     },
@@ -641,6 +701,16 @@ export default {
       } else {
         this.isCollapse = false;
       }
+    },
+    onSearchToggle(value) {
+      this.searchToggleMessage = value
+        ? "搜索功能已开启，我现在可以上网查资料啦！😎"
+         : "搜索功能已关闭，接下来就看我自由发挥了";
+      
+      // 设置一个定时器，3秒后清除消息
+      setTimeout(() => {
+        this.searchToggleMessage = '';
+      }, 3000);
     }
   },
   beforeDestroy() {
@@ -665,7 +735,6 @@ export default {
   transition: width 0.3s;
   height: 100vh;
 }
-
 
 .el-menu-vertical:not(.el-menu--collapse) {
   width: 200px;
@@ -724,6 +793,22 @@ export default {
 
 .el-select {
   width: 90%;
+}
+
+.search-toggle {
+  display: flex;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+.search-toggle span {
+  margin-right: 10px;
+}
+
+.search-toggle-message {
+  margin-bottom: 10px;
+  font-style: italic;
+  color: #409EFF;
 }
 
 .chat-windows {
@@ -848,6 +933,11 @@ export default {
 
 .el-table th, .el-table td {
   background-color: transparent;
+}
+
+.search-results {
+  width: 100%;
+  max-width: 100%;
 }
 
 @media (max-width: 768px) {
